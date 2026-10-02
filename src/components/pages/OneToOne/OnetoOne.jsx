@@ -1,34 +1,20 @@
-// import { Search, Plus, MoreVertical } from "lucide-react";
-// import { useState } from "react";
+
+
+
+// import { Search, Plus, MoreVertical, Pin } from "lucide-react";
+// import { useCallback, useEffect, useState } from "react";
 // import OneToOneModal from "./NewOnetoOneModal";
-
-// const COLORS = ["#7C6FE8", "#2E9E6D", "#D9822B", "#E8556D", "#2B8FD9"];
-
-// const initials = (name) =>
-//   name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
-
-// const makeChat = (id, name, message = "", time = "", ts = 0, unread = 0, online = false) => ({
-//   key: `chat-${id}`,
-//   type: "chat",
-//   id,
-//   name,
-//   avatar: initials(name),
-//   message,
-//   time,
-//   ts,
-//   unread,
-//   online,
-//   color: COLORS[name.charCodeAt(0) % COLORS.length],
-// });
-
-// const INITIAL_CHATS = [
-//   makeChat(1, "Aditya Salkar", "Important discussion", "10:24 AM", 6, 2, true),
-//   makeChat(2, "Rahul Patil", "Sent the design files", "09:10 AM", 5, 0, false),
-//   makeChat(3, "Neha Kulkarni", "Call me when free", "Yesterday", 2, 1, true),
-// ];
+// import {
+//   getMyChats,
+//   markChatAsRead,
+//   togglePinChat,
+//   toggleArchiveChat,
+//   clearChatMessages,
+// } from "../../../api/chatsApi";
 
 // function OnetoOne({ onOpenChat }) {
-//   const [items, setItems] = useState(INITIAL_CHATS);
+//   const [items, setItems] = useState([]);
+//   const [loading, setLoading] = useState(true);
 //   const [query, setQuery] = useState("");
 //   const [menuKey, setMenuKey] = useState(null);
 //   const [showNewChat, setShowNewChat] = useState(false);
@@ -36,45 +22,101 @@
 //   const update = (key, patch) =>
 //     setItems((prev) => prev.map((x) => (x.key === key ? { ...x, ...patch } : x)));
 
+//   const load = useCallback(async () => {
+//     try {
+//       const all = await getMyChats();
+//       setItems(all.filter((c) => c.type === "chat")); // one-to-one only
+//     } catch (e) {
+//       console.error("Load chats error:", e);
+//     } finally {
+//       setLoading(false);
+//     }
+//   }, []);
+
+//   useEffect(() => {
+//     load();
+//     const timer = setInterval(load, 10000);
+//     return () => clearInterval(timer);
+//   }, [load]);
+
 //   const open = (item) => {
 //     onOpenChat && onOpenChat({ ...item, unread: 0 });
-//     if (item.unread > 0) update(item.key, { unread: 0 });
+
+//     if (item.unread > 0) {
+//       update(item.key, { unread: 0 });
+//       markChatAsRead(item.id).catch((e) => console.error("Mark read error:", e));
+//     }
 //   };
 
-//   // modal passes a contact: { id, name, online }
-//   const handleCreateChat = (contact) => {
+//   // chat comes from the modal: { id: chatId, userId, name, avatar, color, online }
+//   const handleSelectUser = (chat) => {
 //     setShowNewChat(false);
 
-//     // already have a chat with this person -> just open it
-//     const existing = items.find((x) => x.id === contact.id);
+//     const existing = items.find((x) => String(x.id) === String(chat.id));
 //     if (existing) {
 //       open(existing);
 //       return;
 //     }
 
-//     const nextTs = Math.max(0, ...items.map((x) => x.ts)) + 1;
-//     const created = makeChat(contact.id, contact.name, "", "", nextTs, 0, !!contact.online);
+//     const created = {
+//       key: `chat-${chat.id}`,
+//       type: "chat",
+//       id: chat.id,
+//       userId: chat.userId,
+//       name: chat.name,
+//       avatar: chat.avatar,
+//       color: chat.color,
+//       online: !!chat.online,
+//       message: "",
+//       time: "",
+//       ts: Date.now(),
+//       unread: 0,
+//       pinned: false,
+//     };
+
 //     setItems((prev) => [created, ...prev]);
 //     open(created);
 //   };
 
-//   const handleClear = (item) => {
+//   const handlePin = async (item) => {
 //     setMenuKey(null);
-//     if (!window.confirm(`Permanently clear all messages with ${item.name}?`)) return;
-//     update(item.key, { message: "", unread: 0 });
+//     try {
+//       await togglePinChat(item.id);
+//       update(item.key, { pinned: !item.pinned });
+//     } catch (e) {
+//       console.error("Pin error:", e);
+//     }
 //   };
 
-//   const handleDelete = (item) => {
+//   const handleClear = async (item) => {
 //     setMenuKey(null);
-//     if (!window.confirm(`Delete chat with ${item.name}? This can't be undone.`)) return;
-//     setItems((prev) => prev.filter((x) => x.key !== item.key));
+//     if (!window.confirm(`Permanently clear all messages with ${item.name}?`)) return;
+//     try {
+//       await clearChatMessages(item.id);
+//       update(item.key, { message: "", unread: 0 });
+//     } catch (e) {
+//       console.error("Clear error:", e);
+//       alert("Failed to clear chat.");
+//     }
+//   };
+
+//   const handleArchive = async (item) => {
+//     setMenuKey(null);
+//     if (!window.confirm(`Archive chat with ${item.name}?`)) return;
+//     try {
+//       await toggleArchiveChat(item.id);
+//       setItems((prev) => prev.filter((x) => x.key !== item.key));
+//     } catch (e) {
+//       console.error("Archive error:", e);
+//       alert("Failed to archive chat.");
+//     }
 //   };
 
 //   const term = query.trim().toLowerCase();
 
 //   const visible = items
 //     .filter((x) => x.name.toLowerCase().includes(term))
-//     .sort((a, b) => b.ts - a.ts);
+//     .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.ts - a.ts);
 
 //   return (
 //     <div className="position-relative" style={{ minHeight: "100%" }}>
@@ -123,15 +165,14 @@
 
 //       {/* CLICK OUTSIDE TO CLOSE MENU */}
 //       {menuKey && (
-//         <div
-//           onClick={() => setMenuKey(null)}
-//           style={{ position: "fixed", inset: 0, zIndex: 15 }}
-//         />
+//         <div onClick={() => setMenuKey(null)} style={{ position: "fixed", inset: 0, zIndex: 15 }} />
 //       )}
 
 //       {/* LIST */}
 //       <div className="px-3" style={{ paddingBottom: "80px" }}>
-//         {visible.length === 0 && (
+//         {loading && <div className="text-center small text-muted py-3">Loading chats...</div>}
+
+//         {!loading && visible.length === 0 && (
 //           <div className="text-center small text-muted py-3">No chats</div>
 //         )}
 
@@ -177,13 +218,14 @@
 //             {/* DETAILS */}
 //             <div className="flex-grow-1" style={{ minWidth: 0 }}>
 //               <div className="d-flex justify-content-between">
-//                 <div className="fw-medium" style={{ color: "#1E2328", fontSize: "13px" }}>
-//                   {item.name}
+//                 <div className="d-flex align-items-center gap-1" style={{ minWidth: 0 }}>
+//                   <div className="fw-medium text-truncate" style={{ color: "#1E2328", fontSize: "13px" }}>
+//                     {item.name}
+//                   </div>
+//                   {item.pinned && <Pin size={11} color="#B9AFA5" style={{ flexShrink: 0 }} />}
 //                 </div>
 
-//                 <small
-//                   style={{ color: item.unread > 0 ? "#F4712B" : "#B9AFA5", fontSize: "10px" }}
-//                 >
+//                 <small style={{ color: item.unread > 0 ? "#F4712B" : "#B9AFA5", fontSize: "10px" }}>
 //                   {item.time}
 //                 </small>
 //               </div>
@@ -241,11 +283,14 @@
 //                   cursor: "pointer",
 //                 }}
 //               >
+//                 <div className="px-3 py-2" onClick={() => handlePin(item)}>
+//                   {item.pinned ? "Unpin" : "Pin"}
+//                 </div>
 //                 <div className="px-3 py-2" onClick={() => handleClear(item)}>
 //                   Clear chat
 //                 </div>
-//                 <div className="px-3 py-2 text-danger" onClick={() => handleDelete(item)}>
-//                   Delete chat
+//                 <div className="px-3 py-2 text-danger" onClick={() => handleArchive(item)}>
+//                   Archive chat
 //                 </div>
 //               </div>
 //             )}
@@ -278,15 +323,14 @@
 //       <OneToOneModal
 //         show={showNewChat}
 //         onClose={() => setShowNewChat(false)}
-//         onSelectContact={handleCreateChat}
-//         existingIds={items.map((x) => x.id)}
+//         onSelectUser={handleSelectUser}
+//         existingIds={items.map((x) => x.userId)}
 //       />
 //     </div>
 //   );
 // }
 
 // export default OnetoOne;
-
 
 import { Search, Plus, MoreVertical, Pin } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -298,6 +342,11 @@ import {
   toggleArchiveChat,
   clearChatMessages,
 } from "../../../api/chatsApi";
+import {
+  getUnreadCount,
+  markAllAsRead,
+  markChatNotificationsRead,
+} from "../../../api/notificationsApi";
 
 function OnetoOne({ onOpenChat }) {
   const [items, setItems] = useState([]);
@@ -305,6 +354,7 @@ function OnetoOne({ onOpenChat }) {
   const [query, setQuery] = useState("");
   const [menuKey, setMenuKey] = useState(null);
   const [showNewChat, setShowNewChat] = useState(false);
+  const [notifCount, setNotifCount] = useState(0);
 
   const update = (key, patch) =>
     setItems((prev) => prev.map((x) => (x.key === key ? { ...x, ...patch } : x)));
@@ -318,6 +368,11 @@ function OnetoOne({ onOpenChat }) {
     } finally {
       setLoading(false);
     }
+    try {
+      setNotifCount(await getUnreadCount());
+    } catch (e) {
+      console.error("Unread count error:", e);
+    }
   }, []);
 
   useEffect(() => {
@@ -326,12 +381,25 @@ function OnetoOne({ onOpenChat }) {
     return () => clearInterval(timer);
   }, [load]);
 
+  const handleReadAll = async () => {
+    try {
+      await markAllAsRead();
+      setNotifCount(0);
+    } catch (e) {
+      console.error("Mark all read error:", e);
+    }
+  };
+
   const open = (item) => {
     onOpenChat && onOpenChat({ ...item, unread: 0 });
 
     if (item.unread > 0) {
       update(item.key, { unread: 0 });
       markChatAsRead(item.id).catch((e) => console.error("Mark read error:", e));
+      markChatNotificationsRead(item.id)
+        .then(() => getUnreadCount())
+        .then(setNotifCount)
+        .catch((e) => console.error("Notification read error:", e));
     }
   };
 
@@ -408,13 +476,24 @@ function OnetoOne({ onOpenChat }) {
   return (
     <div className="position-relative" style={{ minHeight: "100%" }}>
       {/* HEADER */}
-      <div className="px-3 pt-3 pb-2">
-        <div className="fw-semibold" style={{ color: "#1E2328", fontSize: "14px" }}>
-          One-to-One Chats
+      <div className="px-3 pt-3 pb-2 d-flex justify-content-between align-items-center">
+        <div>
+          <div className="fw-semibold" style={{ color: "#1E2328", fontSize: "14px" }}>
+            One-to-One Chats
+          </div>
+          <small style={{ color: "#8A7C6F", fontSize: "11px" }}>
+            Your personal conversations
+          </small>
         </div>
-        <small style={{ color: "#8A7C6F", fontSize: "11px" }}>
-          Your personal conversations
-        </small>
+        {notifCount > 0 && (
+          <button
+            className="btn btn-sm border-0 p-0"
+            style={{ color: "#F4712B", fontSize: "11px" }}
+            onClick={handleReadAll}
+          >
+            {notifCount} new · Mark all read
+          </button>
+        )}
       </div>
 
       {/* SEARCH */}

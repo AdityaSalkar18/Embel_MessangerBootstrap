@@ -1,10 +1,10 @@
 
 
-
-
 // import { Search, Plus, MoreVertical, Pin } from "lucide-react";
 // import { useCallback, useEffect, useState } from "react";
 // import NewChatModal from "./NewChatModal"; // adjust path if the modal lives elsewhere
+// import OnetoOneView from "../OneToOne/OnetoOneView"; // adjust paths if the views live elsewhere
+// import GroupView from "../Groups/GroupView";
 // import {
 //   getMyChats,
 //   markChatAsRead,
@@ -13,7 +13,27 @@
 //   clearChatMessages,
 // } from "../../../api/chatsApi";
 
-// function Chats({ onOpenChat, onOpenGroup }) {
+// /* =========================================================
+//  * HELPERS
+//  * ========================================================= */
+
+// // makes sure every item has type === "group" or type === "chat"
+// const normalizeChat = (c) => {
+//   const isGroup =
+//     c.type === "group" ||
+//     c.isGroup === true ||
+//     String(c.chatType ?? c.type ?? "").toUpperCase() === "GROUP" ||
+//     c.groupId != null;
+//   return { ...c, type: isGroup ? "group" : "chat" };
+// };
+
+// /* =========================================================
+//  * COMPONENT
+//  * ========================================================= */
+
+// function Chats() {
+//   const [activeChat, setActiveChat] = useState(null); // one-to-one -> OnetoOneView
+//   const [activeGroup, setActiveGroup] = useState(null); // group -> GroupView
 //   const [items, setItems] = useState([]);
 //   const [loading, setLoading] = useState(true);
 //   const [query, setQuery] = useState("");
@@ -25,7 +45,8 @@
 
 //   const load = useCallback(async () => {
 //     try {
-//       setItems(await getMyChats());
+//       const list = await getMyChats();
+//       setItems(list.map(normalizeChat));
 //     } catch (e) {
 //       console.error("Load chats error:", e);
 //     } finally {
@@ -40,14 +61,12 @@
 //     return () => clearInterval(timer);
 //   }, [load]);
 
+//   // group -> GroupView, one-to-one -> OnetoOneView
 //   const open = (item) => {
 //     const payload = { ...item, unread: 0 };
 
-//     if (item.type === "group") {
-//       onOpenGroup && onOpenGroup(payload);
-//     } else {
-//       onOpenChat && onOpenChat(payload);
-//     }
+//     if (item.type === "group") setActiveGroup(payload); // -> GroupView
+//     else setActiveChat(payload); // -> OnetoOneView
 
 //     if (item.unread > 0) {
 //       update(item.key, { unread: 0 });
@@ -123,8 +142,21 @@
 //   const term = query.trim().toLowerCase();
 
 //   const visible = items
-//     .filter((x) => x.name.toLowerCase().includes(term))
-//     .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.ts - a.ts);
+//     .filter((x) => (x.name || "").toLowerCase().includes(term))
+//     .sort((a, b) => Number(b.pinned) - Number(a.pinned) || (b.ts || 0) - (a.ts || 0));
+
+//   const closeView = () => {
+//     setActiveChat(null);
+//     setActiveGroup(null);
+//     load(); // refresh last message / unread counts when coming back
+//   };
+
+//   /* ---------- OPEN CONVERSATION ---------- */
+
+//   if (activeGroup) return <GroupView group={activeGroup} onBack={closeView} />;
+//   if (activeChat) return <OnetoOneView chat={activeChat} onBack={closeView} />;
+
+//   /* ---------- CHAT LIST ---------- */
 
 //   return (
 //     <div className="position-relative d-flex flex-column" style={{ minHeight: "100%" }}>
@@ -363,6 +395,8 @@
 
 // export default Chats;
 
+
+
 import { Search, Plus, MoreVertical, Pin } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import NewChatModal from "./NewChatModal"; // adjust path if the modal lives elsewhere
@@ -375,6 +409,11 @@ import {
   toggleArchiveChat,
   clearChatMessages,
 } from "../../../api/chatsApi";
+import {
+  getUnreadCount,
+  markAllAsRead,
+  markChatNotificationsRead,
+} from "../../../api/notificationsApi";
 
 /* =========================================================
  * HELPERS
@@ -402,6 +441,7 @@ function Chats() {
   const [query, setQuery] = useState("");
   const [menuKey, setMenuKey] = useState(null);
   const [showNewChat, setShowNewChat] = useState(false);
+  const [notifCount, setNotifCount] = useState(0);
 
   const update = (key, patch) =>
     setItems((prev) => prev.map((x) => (x.key === key ? { ...x, ...patch } : x)));
@@ -415,14 +455,28 @@ function Chats() {
     } finally {
       setLoading(false);
     }
+    try {
+      setNotifCount(await getUnreadCount());
+    } catch (e) {
+      console.error("Unread count error:", e);
+    }
   }, []);
 
-  // Load + refresh every 10s (unread counts, last message)
+  // Load + refresh every 10s (unread counts, last message, notifications)
   useEffect(() => {
     load();
     const timer = setInterval(load, 10000);
     return () => clearInterval(timer);
   }, [load]);
+
+  const handleReadAll = async () => {
+    try {
+      await markAllAsRead();
+      setNotifCount(0);
+    } catch (e) {
+      console.error("Mark all read error:", e);
+    }
+  };
 
   // group -> GroupView, one-to-one -> OnetoOneView
   const open = (item) => {
@@ -434,6 +488,10 @@ function Chats() {
     if (item.unread > 0) {
       update(item.key, { unread: 0 });
       markChatAsRead(item.id).catch((e) => console.error("Mark read error:", e));
+      markChatNotificationsRead(item.chatId ?? item.id)
+        .then(() => getUnreadCount())
+        .then(setNotifCount)
+        .catch((e) => console.error("Notification read error:", e));
     }
   };
 
@@ -511,7 +569,7 @@ function Chats() {
   const closeView = () => {
     setActiveChat(null);
     setActiveGroup(null);
-    load(); // refresh last message / unread counts when coming back
+    load(); // refresh last message / unread counts / notifications when coming back
   };
 
   /* ---------- OPEN CONVERSATION ---------- */
@@ -524,13 +582,24 @@ function Chats() {
   return (
     <div className="position-relative d-flex flex-column" style={{ minHeight: "100%" }}>
       {/* HEADER */}
-      <div className="px-3 pt-3 pb-2">
-        <div className="fw-semibold" style={{ color: "#1E2328", fontSize: "14px" }}>
-          All Chats
+      <div className="px-3 pt-3 pb-2 d-flex justify-content-between align-items-center">
+        <div>
+          <div className="fw-semibold" style={{ color: "#1E2328", fontSize: "14px" }}>
+            All Chats
+          </div>
+          <small style={{ color: "#8A7C6F", fontSize: "11px" }}>
+            Personal conversations and groups
+          </small>
         </div>
-        <small style={{ color: "#8A7C6F", fontSize: "11px" }}>
-          Personal conversations and groups
-        </small>
+        {notifCount > 0 && (
+          <button
+            className="btn btn-sm border-0 p-0"
+            style={{ color: "#F4712B", fontSize: "11px" }}
+            onClick={handleReadAll}
+          >
+            {notifCount} new · Mark all read
+          </button>
+        )}
       </div>
 
       {/* SEARCH */}

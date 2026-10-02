@@ -1,88 +1,98 @@
+
+
 // import { Search, Plus, MoreVertical } from "lucide-react";
-// import { useState } from "react";
+// import { useCallback, useEffect, useState } from "react";
 // import NewGroupModal from "./NewGroupModal";
-
-// const COLORS = ["#7C6FE8", "#2E9E6D", "#D9822B", "#E8556D", "#2B8FD9"];
-
-// const initials = (name) =>
-//   name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
-
-// const makeGroup = (id, name, message = "", time = "", unread = 0, memberCount = 0, isAdmin = false, description = "") => ({
-//   id,
-//   name,
-//   description,
-//   avatar: initials(name),
-//   message,
-//   time,
-//   unread,
-//   memberCount,
-//   isAdmin,
-//   color: COLORS[name.charCodeAt(0) % COLORS.length],
-//   type: "group",
-// });
-
-// // Example data
-// const INITIAL_GROUPS = [
-//   makeGroup(101, "Project Team", "Priya: Meeting at 4 PM", "11:02 AM", 3, 8, true, "Project discussion"),
-//   makeGroup(102, "Family", "Mom: Dinner at 8", "Yesterday", 0, 5, false, "Family group"),
-//   makeGroup(103, "College Friends", "Omkar: Trip plan?", "Mon", 0, 12, false, "Old friends"),
-//   makeGroup(104, "Office Updates", "HR: Holiday on Friday", "Sun", 1, 40, false, "Company announcements"),
-// ];
+// import { getMyGroups, createGroup, leaveGroup, deleteGroup, clearGroupMessages } from "../../../api/groupsApi";
+// import { markChatAsRead } from "../../../api/chatsApi";
 
 // function Groups({ onOpenGroup, onOpenChat }) {
 //   const [showNewGroup, setShowNewGroup] = useState(false);
-//   const [groups, setGroups] = useState(INITIAL_GROUPS);
+//   const [groups, setGroups] = useState([]);
+//   const [loading, setLoading] = useState(true);
 //   const [query, setQuery] = useState("");
 //   const [menuId, setMenuId] = useState(null);
 
 //   const update = (id, patch) =>
 //     setGroups((prev) => prev.map((g) => (g.id === id ? { ...g, ...patch } : g)));
 
+//   const load = useCallback(async () => {
+//     try {
+//       setGroups(await getMyGroups());
+//     } catch (e) {
+//       console.error("Load groups error:", e);
+//     } finally {
+//       setLoading(false);
+//     }
+//   }, []);
+
+//   useEffect(() => {
+//     load();
+//     const timer = setInterval(load, 10000);
+//     return () => clearInterval(timer);
+//   }, [load]);
+
 //   // Works with either prop name: onOpenGroup or onOpenChat
 //   const openGroup = (group) => {
 //     const handler = onOpenGroup || onOpenChat;
 //     handler && handler({ ...group, unread: 0, type: "group" });
-//     if (group.unread > 0) update(group.id, { unread: 0 });
+//     if (group.unread > 0) {
+//       update(group.id, { unread: 0 });
+//       markChatAsRead(group.chatId).catch((e) => console.error("Mark read error:", e));
+//     }
 //   };
 
-//   // modal may pass {name, description, memberIds}
-//   const handleCreateGroup = (data) => {
-//     setShowNewGroup(false);
-//     const created = makeGroup(
-//       data?.id ?? Date.now(),
-//       data?.name || "New Group",
-//       "",
-//       "",
-//       0,
-//       data?.memberIds?.length ?? data?.members?.length ?? 1,
-//       true,
-//       data?.description ?? ""
-//     );
-//     setGroups((prev) => [created, ...prev]);
-//     openGroup(created);
+//   // modal passes { name, description, memberIds }
+//   const handleCreateGroup = async (data) => {
+//     try {
+//       const created = await createGroup(data);
+//       setShowNewGroup(false);
+//       setGroups((prev) => [{ ...created, isAdmin: true, ts: Date.now() }, ...prev]);
+//       openGroup({ ...created, isAdmin: true });
+//       return true;
+//     } catch (e) {
+//       console.error("Create group error:", e);
+//       return false;
+//     }
 //   };
 
-//   const handleClear = (g) => {
+//   const handleClear = async (g) => {
 //     setMenuId(null);
 //     if (!window.confirm(`Permanently clear all messages in ${g.name}?`)) return;
-//     update(g.id, { message: "", unread: 0 });
+//     try {
+//       await clearGroupMessages(g.id);
+//       update(g.id, { message: "", unread: 0 });
+//     } catch (e) {
+//       alert("Failed to clear chat.");
+//     }
 //   };
 
-//   const handleLeave = (g) => {
+//   const handleLeave = async (g) => {
 //     setMenuId(null);
 //     if (!window.confirm(`Leave ${g.name}?`)) return;
-//     setGroups((prev) => prev.filter((x) => x.id !== g.id));
+//     try {
+//       await leaveGroup(g.id);
+//       setGroups((prev) => prev.filter((x) => x.id !== g.id));
+//     } catch (e) {
+//       alert("Failed to leave group.");
+//     }
 //   };
 
-//   const handleDelete = (g) => {
+//   const handleDelete = async (g) => {
 //     setMenuId(null);
 //     if (!window.confirm(`Delete ${g.name} for everyone? This can't be undone.`)) return;
-//     setGroups((prev) => prev.filter((x) => x.id !== g.id));
+//     try {
+//       await deleteGroup(g.id);
+//       setGroups((prev) => prev.filter((x) => x.id !== g.id));
+//     } catch (e) {
+//       alert("Failed to delete group.");
+//     }
 //   };
 
-//   const visible = groups.filter((g) =>
-//     g.name.toLowerCase().includes(query.trim().toLowerCase())
-//   );
+//   const term = query.trim().toLowerCase();
+//   const visible = groups
+//     .filter((g) => g.name.toLowerCase().includes(term))
+//     .sort((a, b) => b.ts - a.ts);
 
 //   return (
 //     <div className="position-relative" style={{ minHeight: "100%" }}>
@@ -108,7 +118,6 @@
 //               pointerEvents: "none",
 //             }}
 //           />
-
 //           <input
 //             type="text"
 //             className="form-control"
@@ -129,15 +138,14 @@
 
 //       {/* CLICK OUTSIDE TO CLOSE MENU */}
 //       {menuId && (
-//         <div
-//           onClick={() => setMenuId(null)}
-//           style={{ position: "fixed", inset: 0, zIndex: 15 }}
-//         />
+//         <div onClick={() => setMenuId(null)} style={{ position: "fixed", inset: 0, zIndex: 15 }} />
 //       )}
 
 //       {/* GROUP LIST */}
-//       <div className="px-3">
-//         {visible.length === 0 && (
+//       <div className="px-3" style={{ paddingBottom: "80px" }}>
+//         {loading && <div className="text-center small text-muted py-3">Loading groups...</div>}
+
+//         {!loading && visible.length === 0 && (
 //           <div className="text-center small text-muted py-3">No groups</div>
 //         )}
 
@@ -148,9 +156,8 @@
 //             className="d-flex align-items-center gap-2 p-2 mb-1 position-relative"
 //             style={{ borderRadius: "10px", cursor: "pointer", color: "inherit" }}
 //           >
-//             {/* AVATAR */}
 //             <div
-//               className="position-relative d-flex align-items-center justify-content-center"
+//               className="d-flex align-items-center justify-content-center"
 //               style={{
 //                 width: "42px",
 //                 height: "42px",
@@ -165,19 +172,12 @@
 //               {group.avatar}
 //             </div>
 
-//             {/* DETAILS */}
 //             <div className="flex-grow-1" style={{ minWidth: 0 }}>
 //               <div className="d-flex justify-content-between">
-//                 <div className="fw-medium" style={{ color: "#1E2328", fontSize: "13px" }}>
+//                 <div className="fw-medium text-truncate" style={{ color: "#1E2328", fontSize: "13px" }}>
 //                   {group.name}
 //                 </div>
-
-//                 <small
-//                   style={{
-//                     color: group.unread > 0 ? "#F4712B" : "#B9AFA5",
-//                     fontSize: "10px",
-//                   }}
-//                 >
+//                 <small style={{ color: group.unread > 0 ? "#F4712B" : "#B9AFA5", fontSize: "10px" }}>
 //                   {group.time}
 //                 </small>
 //               </div>
@@ -187,7 +187,7 @@
 //                   className="text-truncate"
 //                   style={{ color: "#8A7C6F", fontSize: "11px", maxWidth: "210px" }}
 //                 >
-//                   {group.message}
+//                   {group.message || "No messages yet"}
 //                 </div>
 
 //                 {group.unread > 0 && (
@@ -208,7 +208,6 @@
 //               </div>
 //             </div>
 
-//             {/* MENU BUTTON */}
 //             <button
 //               className="btn border-0 p-1"
 //               onClick={(e) => {
@@ -271,7 +270,6 @@
 //         <Plus size={24} strokeWidth={2} />
 //       </button>
 
-//       {/* NEW GROUP MODAL */}
 //       <NewGroupModal
 //         show={showNewGroup}
 //         onClose={() => setShowNewGroup(false)}
@@ -283,12 +281,16 @@
 
 // export default Groups;
 
-
 import { Search, Plus, MoreVertical } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import NewGroupModal from "./NewGroupModal";
 import { getMyGroups, createGroup, leaveGroup, deleteGroup, clearGroupMessages } from "../../../api/groupsApi";
 import { markChatAsRead } from "../../../api/chatsApi";
+import {
+  getUnreadCount,
+  markAllAsRead,
+  markChatNotificationsRead,
+} from "../../../api/notificationsApi";
 
 function Groups({ onOpenGroup, onOpenChat }) {
   const [showNewGroup, setShowNewGroup] = useState(false);
@@ -296,6 +298,7 @@ function Groups({ onOpenGroup, onOpenChat }) {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [menuId, setMenuId] = useState(null);
+  const [notifCount, setNotifCount] = useState(0);
 
   const update = (id, patch) =>
     setGroups((prev) => prev.map((g) => (g.id === id ? { ...g, ...patch } : g)));
@@ -308,6 +311,11 @@ function Groups({ onOpenGroup, onOpenChat }) {
     } finally {
       setLoading(false);
     }
+    try {
+      setNotifCount(await getUnreadCount());
+    } catch (e) {
+      console.error("Unread count error:", e);
+    }
   }, []);
 
   useEffect(() => {
@@ -316,6 +324,15 @@ function Groups({ onOpenGroup, onOpenChat }) {
     return () => clearInterval(timer);
   }, [load]);
 
+  const handleReadAll = async () => {
+    try {
+      await markAllAsRead();
+      setNotifCount(0);
+    } catch (e) {
+      console.error("Mark all read error:", e);
+    }
+  };
+
   // Works with either prop name: onOpenGroup or onOpenChat
   const openGroup = (group) => {
     const handler = onOpenGroup || onOpenChat;
@@ -323,6 +340,10 @@ function Groups({ onOpenGroup, onOpenChat }) {
     if (group.unread > 0) {
       update(group.id, { unread: 0 });
       markChatAsRead(group.chatId).catch((e) => console.error("Mark read error:", e));
+      markChatNotificationsRead(group.chatId)
+        .then(() => getUnreadCount())
+        .then(setNotifCount)
+        .catch((e) => console.error("Notification read error:", e));
     }
   };
 
@@ -381,10 +402,19 @@ function Groups({ onOpenGroup, onOpenChat }) {
   return (
     <div className="position-relative" style={{ minHeight: "100%" }}>
       {/* HEADER */}
-      <div className="px-3 pt-3 pb-2">
+      <div className="px-3 pt-3 pb-2 d-flex justify-content-between align-items-center">
         <div className="fw-semibold" style={{ color: "#1E2328", fontSize: "14px" }}>
           Groups
         </div>
+        {notifCount > 0 && (
+          <button
+            className="btn btn-sm border-0 p-0"
+            style={{ color: "#F4712B", fontSize: "11px" }}
+            onClick={handleReadAll}
+          >
+            {notifCount} new · Mark all read
+          </button>
+        )}
       </div>
 
       {/* SEARCH */}
