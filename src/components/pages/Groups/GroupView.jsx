@@ -2127,6 +2127,34 @@ const fileExt = (name = "") =>
 const baseName = (u = "") => decodeURIComponent(u.split("?")[0].split("/").pop() || "");
 const isCard = (t = "") => ATTACH_RE.test(t) || t.startsWith("📁 Project:");
 
+/* ---------- project card helpers ---------- */
+
+const today = () => new Date().toISOString().slice(0, 10);
+
+// text stored in the chat message for a project card
+const buildProjectText = ({ name, date, projectId, fileNames }) => {
+  let t = `📁 Project: ${name}\n📅 Date: ${date || today()}`;
+  if (projectId != null) t += `\n🆔 ID: ${projectId}`;
+  fileNames.forEach((n) => (t += `\n📎 File: ${n}`));
+  return t;
+};
+
+const parseProjectText = (text = "") => {
+  const lines = text.split("\n");
+  const pick = (p) => lines.find((l) => l.startsWith(p))?.replace(p, "").trim();
+  return {
+    name: pick("📁 Project:") || "",
+    date: pick("📅 Date:"),
+    projectId: pick("🆔 ID:"),
+    files: lines.filter((l) => l.startsWith("📎 File:")).map((l) => l.replace("📎 File:", "").trim()),
+  };
+};
+
+// a file object coming from the server (field names vary)
+const fName = (f) => f.fileName ?? f.originalName ?? f.name ?? "file";
+const fId = (f) => f.id ?? f.fileId;
+const toFiles = (p) => p?.files ?? p?.attachments ?? (Array.isArray(p) ? p : []);
+
 const fmtTime = (value) => {
   const date = value ? new Date(value) : new Date();
   return isNaN(date) ? "" : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -2238,11 +2266,15 @@ function GroupView({ group, onBack }) {
   const [forwardTo, setForwardTo] = useState("");
 
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+
+  // ----- project modal state -----
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [projectName, setProjectName] = useState("");
-  const [projectDate, setProjectDate] = useState("");
-  const [projectFile, setProjectFile] = useState(null);
-  const [existingProjects, setExistingProjects] = useState([]);
+  const [existingProjects, setExistingProjects] = useState([]); // name suggestions
+  const [newFiles, setNewFiles] = useState([]); // files picked now (many)
+  const [existingFiles, setExistingFiles] = useState([]); // files already on server (edit mode)
+  const [removedIds, setRemovedIds] = useState([]); // server files marked for removal
+  const [editingProject, setEditingProject] = useState(null); // { messageId, projectId, date } | null
 
   const [projectFilesData] = useState({
     "College ERP": [
@@ -2347,7 +2379,12 @@ function GroupView({ group, onBack }) {
     if (e.key === "Escape" && editingId) cancelEdit();
   };
 
+  // project cards open the project modal, normal text goes to the input box
   const startEdit = (msg) => {
+    if (msg.text.startsWith("📁 Project:")) {
+      openProjectEdit(msg);
+      return;
+    }
     setEditingId(msg.id);
     setMessage(msg.text);
   };
@@ -2444,21 +2481,21 @@ function GroupView({ group, onBack }) {
     setPanel(type);
   };
 
-  /* ---------- ATTACHMENTS (files, images, projects) ---------- */
+  /* ---------- ATTACHMENTS (files, images) ---------- */
 
   // POST /api/attachments/upload, then persist a chat message with the file url
   const uploadAndSend = async (file, kind) => {
     setUploading(true);
     try {
       const res = await attachmentsApi.uploadFile(file, chatId);
-      console.log("upload response:", res); // check the url key
+      console.log("upload response:", res);
       const url =
         res?.url ?? res?.fileUrl ?? res?.filePath ?? res?.path ??
         (typeof res === "string" ? res : "");
       await sendText(`[[${kind}:${url}|${file.name}]]`);
     } catch (e) {
       console.error("Upload error:", e);
-      alert("Failed to upload file.");
+      alert(`Failed to upload file: ${e.message}`);
     } finally {
       setUploading(false);
     }
@@ -2486,11 +2523,25 @@ function GroupView({ group, onBack }) {
     if (file) uploadAndSend(file, "img");
   };
 
+  /* ---------- PROJECT FILES (add many files / edit: add + remove) ---------- */
+
+  const resetProjectForm = () => {
+    setProjectName("");
+    setNewFiles([]);
+    setExistingFiles([]);
+    setRemovedIds([]);
+    setEditingProject(null);
+  };
+
+  const closeProjectModal = () => {
+    setShowProjectModal(false);
+    resetProjectForm();
+  };
+
+  // "Project File" from the attach menu -> NEW project
   const handleProject = () => {
     setShowAttachmentMenu(false);
-    setProjectName("");
-    setProjectDate("");
-    setProjectFile(null);
+    resetProjectForm();
     setShowProjectModal(true);
 
     // GET /api/attachments/projects -> suggestions for the name field
@@ -2498,6 +2549,44 @@ function GroupView({ group, onBack }) {
       .getMyProjects()
       .then(setExistingProjects)
       .catch((e) => console.error("Projects load error:", e));
+  };
+
+  // pencil on a project card -> EDIT project
+  const openProjectEdit = async (msg) => {
+    const p = parseProjectText(msg.text);
+    resetProjectForm();
+    setProjectName(p.name);
+    setEditingProject({ messageId: msg.id, projectId: p.projectId, date: p.date });
+    setShowProjectModal(true);
+
+    try {
+      let pid = p.projectId;
+
+      // old cards have no "🆔 ID" line -> find the project by its name
+      if (pid == null) {
+        const list = await attachmentsApi.getMyProjects();
+        setExistingProjects(list);
+        pid = list.find((x) => (x.name ?? x.projectName ?? x.title) === p.name)?.id;
+        if (pid != null) setEditingProject((prev) => ({ ...prev, projectId: pid }));
+      }
+
+      if (pid != null) {
+        const data = await attachmentsApi.getProject(pid);
+        setExistingFiles(toFiles(data));
+      }
+    } catch (e) {
+      console.error("Project load error:", e);
+    }
+  };
+
+  // multiple files, can be picked in several rounds
+  const handlePickFiles = (e) => {
+    const picked = Array.from(e.target.files || []);
+    e.target.value = ""; // so the same file can be picked again later
+    setNewFiles((prev) => [
+      ...prev,
+      ...picked.filter((f) => !prev.some((x) => x.name === f.name && x.size === f.size)),
+    ]);
   };
 
   const handleProjectSubmit = async () => {
@@ -2509,30 +2598,49 @@ function GroupView({ group, onBack }) {
 
     setUploading(true);
     try {
-      // POST /api/attachments/projects/upload (only when a file was chosen)
-      if (projectFile) {
-        await attachmentsApi.uploadToProject({
+      let projectId = editingProject?.projectId;
+
+      // 1) delete the files marked for removal
+      if (removedIds.length) {
+        if (projectId == null) throw new Error("Project id not found, cannot remove files.");
+        for (const id of removedIds) {
+          await attachmentsApi.deleteProjectFile(projectId, id);
+        }
+      }
+
+      // 2) upload all new files in ONE request
+      if (newFiles.length) {
+        const res = await attachmentsApi.uploadToProject({
           projectName: name,
-          files: [projectFile],
+          files: newFiles,
           chatId,
-          dueDate: projectDate,
+          projectId,
         });
+        console.log("project upload response:", res);
+        projectId = projectId ?? res?.id ?? res?.projectId ?? res?.project?.id;
       }
 
-      let text = `📁 Project: ${name}`;
-      if (projectDate) text += `\n📅 Date: ${projectDate}`;
-      if (projectFile) text += `\n📎 File: ${projectFile.name}`;
-      const ok = await sendText(text);
+      // 3) card text with the final file list
+      const kept = existingFiles.filter((f) => !removedIds.includes(fId(f))).map(fName);
+      const text = buildProjectText({
+        name,
+        date: editingProject?.date,
+        projectId,
+        fileNames: [...kept, ...newFiles.map((f) => f.name)],
+      });
 
-      if (ok) {
-        setShowProjectModal(false);
-        setProjectName("");
-        setProjectDate("");
-        setProjectFile(null);
+      if (editingProject) {
+        await messagesApi.editMessage(editingProject.messageId, text);
+        patchMessage(editingProject.messageId, { text, edited: true });
+      } else {
+        const ok = await sendText(text); // returns false (and alerts) on failure
+        if (!ok) return;
       }
+
+      closeProjectModal();
     } catch (e) {
       console.error("Project error:", e);
-      alert("Failed to add project.");
+      alert(`Failed to save project: ${e.message}`);
     } finally {
       setUploading(false);
     }
@@ -2613,12 +2721,9 @@ function GroupView({ group, onBack }) {
       );
     }
 
-    // project card
+    // project card (shows ALL files)
     if (text.startsWith("📁 Project:")) {
-      const lines = text.split("\n");
-      const pName = lines[0].replace("📁 Project:", "").trim();
-      const date = lines.find((l) => l.startsWith("📅"))?.replace("📅 Date:", "").trim();
-      const file = lines.find((l) => l.startsWith("📎"))?.replace("📎 File:", "").trim();
+      const { name: pName, date, files } = parseProjectText(text);
       return (
         <div style={{ ...cardBox, padding: 8 }}>
           <div
@@ -2627,7 +2732,7 @@ function GroupView({ group, onBack }) {
               alignItems: "center",
               gap: 10,
               padding: 8,
-              borderBottom: file ? "1px solid #eee" : "none",
+              borderBottom: files.length ? "1px solid #eee" : "none",
             }}
           >
             <div
@@ -2649,11 +2754,15 @@ function GroupView({ group, onBack }) {
                 {pName}
               </div>
               <div style={{ fontSize: 10, color: "#888", marginTop: 2 }}>
-                PROJECT{date ? ` · ${date}` : ""}
+                PROJECT{date ? ` · ${date}` : ""} · {files.length} file{files.length === 1 ? "" : "s"}
               </div>
             </div>
           </div>
-          {file && <div style={{ padding: "8px 8px 2px", fontSize: 12, wordBreak: "break-all" }}>{file}</div>}
+          {files.map((f, i) => (
+            <div key={i} style={{ padding: "6px 8px 0", fontSize: 12, wordBreak: "break-all" }}>
+              📎 {f}
+            </div>
+          ))}
         </div>
       );
     }
@@ -3280,7 +3389,7 @@ function GroupView({ group, onBack }) {
         </div>
       )}
 
-      {/* ================= PROJECT MODAL ================= */}
+      {/* ================= PROJECT MODAL (add / edit, many files) ================= */}
       {showProjectModal && (
         <div
           style={{
@@ -3293,8 +3402,21 @@ function GroupView({ group, onBack }) {
             zIndex: 1000,
           }}
         >
-          <div style={{ width: "420px", maxWidth: "90%", background: "#fff", borderRadius: "12px", padding: "22px", boxShadow: "0 10px 30px rgba(0,0,0,0.2)" }}>
-            <h3 style={{ marginTop: 0, marginBottom: "18px" }}>Add Project</h3>
+          <div
+            style={{
+              width: "440px",
+              maxWidth: "90%",
+              maxHeight: "85vh",
+              overflowY: "auto",
+              background: "#fff",
+              borderRadius: "12px",
+              padding: "22px",
+              boxShadow: "0 10px 30px rgba(0,0,0,0.2)",
+            }}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: "18px" }}>
+              {editingProject ? "Edit Project" : "Add Project"}
+            </h3>
 
             <input
               type="text"
@@ -3306,27 +3428,87 @@ function GroupView({ group, onBack }) {
             />
             <datalist id="group-project-names">
               {existingProjects.map((p) => {
-                const n = p.name ?? p.projectName;
+                const n = p.name ?? p.projectName ?? p.title;
                 return n ? <option key={p.id ?? n} value={n} /> : null;
               })}
             </datalist>
 
-            <input
-              type="date"
-              value={projectDate}
-              onChange={(e) => setProjectDate(e.target.value)}
-              style={modalInput}
-            />
+            {/* files already saved in the project (edit mode) */}
+            {existingFiles.map((f) => {
+              const removed = removedIds.includes(fId(f));
+              return (
+                <div
+                  key={fId(f)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "6px 8px",
+                    border: "1px solid #eee",
+                    borderRadius: 7,
+                    marginBottom: 6,
+                    fontSize: 13,
+                    opacity: removed ? 0.5 : 1,
+                  }}
+                >
+                  <FileText size={16} color="#F4712B" />
+                  <span style={{ flex: 1, wordBreak: "break-all", textDecoration: removed ? "line-through" : "none" }}>
+                    {fName(f)}
+                  </span>
+                  {removed ? (
+                    <button
+                      onClick={() => setRemovedIds((prev) => prev.filter((id) => id !== fId(f)))}
+                      style={{ ...iconBtn, fontSize: 12, color: "#F4712B" }}
+                    >
+                      Undo
+                    </button>
+                  ) : (
+                    <button onClick={() => setRemovedIds((prev) => [...prev, fId(f)])} style={iconBtn} title="Remove file">
+                      <X size={15} color="#c0392b" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* newly picked files */}
+            {newFiles.map((f, i) => (
+              <div
+                key={`${f.name}-${i}`}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "6px 8px",
+                  border: "1px solid #cfeedd",
+                  background: "#F6FFF9",
+                  borderRadius: 7,
+                  marginBottom: 6,
+                  fontSize: 13,
+                }}
+              >
+                <FileText size={16} color="#2F9E75" />
+                <span style={{ flex: 1, wordBreak: "break-all" }}>{f.name}</span>
+                <button
+                  onClick={() => setNewFiles((prev) => prev.filter((_, idx) => idx !== i))}
+                  style={iconBtn}
+                  title="Remove"
+                >
+                  <X size={15} color="#c0392b" />
+                </button>
+              </div>
+            ))}
 
             <input
               type="file"
-              onChange={(e) => setProjectFile(e.target.files?.[0] || null)}
-              style={{ width: "100%", marginBottom: "18px" }}
+              multiple
+              onChange={handlePickFiles}
+              style={{ width: "100%", margin: "6px 0 18px" }}
             />
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
               <button
-                onClick={() => setShowProjectModal(false)}
+                onClick={closeProjectModal}
                 disabled={uploading}
                 style={{ border: "1px solid #ddd", background: "#fff", padding: "9px 16px", borderRadius: "7px", cursor: "pointer" }}
               >
@@ -3345,7 +3527,7 @@ function GroupView({ group, onBack }) {
                   opacity: uploading ? 0.7 : 1,
                 }}
               >
-                {uploading ? "Uploading..." : "Add Project"}
+                {uploading ? "Saving..." : editingProject ? "Save" : "Add Project"}
               </button>
             </div>
           </div>

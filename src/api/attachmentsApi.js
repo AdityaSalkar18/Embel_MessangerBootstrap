@@ -1,3 +1,70 @@
+// const BASE_URL = "http://localhost:8081/api/attachments";
+
+// // NOTE: no "Content-Type" here - the browser must set the multipart boundary itself
+// const authHeaders = () => {
+//   const token = localStorage.getItem("token");
+//   return token ? { Authorization: `Bearer ${token}` } : {};
+// };
+
+// const request = async (url, { method = "GET", body } = {}) => {
+//   const response = await fetch(url, {
+//     method,
+//     headers: authHeaders(),
+//     ...(body !== undefined && { body }),
+//   });
+//   if (!response.ok) {
+//     const text = await response.text();
+//     console.error(`${method} ${url} failed`, response.status, text);
+//     throw new Error(`Request failed: ${response.status} ${text}`);
+//   }
+//   const text = await response.text();
+//   if (!text) return null;
+//   const data = JSON.parse(text);
+//   return data?.data ?? data;
+// };
+
+// const toList = (data) => {
+//   if (Array.isArray(data)) return data;
+//   if (Array.isArray(data?.content)) return data.content;
+//   if (Array.isArray(data?.projects)) return data.projects;
+//   if (Array.isArray(data?.files)) return data.files;
+//   return [];
+// };
+
+// // POST /api/attachments/upload  (single file)
+// export const uploadFile = (file, chatId) => {
+//   const form = new FormData();
+//   form.append("file", file);
+//   if (chatId != null) form.append("chatId", chatId);
+//   return request(`${BASE_URL}/upload`, { method: "POST", body: form });
+// };
+
+// // POST /api/attachments/upload-multiple  (kept as individual attachments)
+// export const uploadMultiple = (files, chatId) => {
+//   const form = new FormData();
+//   Array.from(files).forEach((f) => form.append("files", f));
+//   if (chatId != null) form.append("chatId", chatId);
+//   return request(`${BASE_URL}/upload-multiple`, { method: "POST", body: form });
+// };
+
+// // POST /api/attachments/projects/upload  (files go into a named Project File folder)
+// export const uploadToProject = ({ projectName, files, chatId, projectId, dueDate }) => {
+//   const form = new FormData();
+//   Array.from(files).forEach((f) => form.append("files", f));
+//   if (projectName) form.append("projectName", projectName);
+//   if (projectId != null) form.append("projectId", projectId);
+//   if (chatId != null) form.append("chatId", chatId);
+//   if (dueDate) form.append("dueDate", dueDate);
+//   return request(`${BASE_URL}/projects/upload`, { method: "POST", body: form });
+// };
+
+// // GET /api/attachments/projects  (my Project File folders)
+// export const getMyProjects = async () => toList(await request(`${BASE_URL}/projects`));
+
+// // GET /api/attachments/projects/{projectId}  (one project's files)
+// export const getProject = (projectId) => request(`${BASE_URL}/projects/${projectId}`);
+
+
 const BASE_URL = "http://localhost:8081/api/attachments";
 
 // NOTE: no "Content-Type" here - the browser must set the multipart boundary itself
@@ -15,12 +82,16 @@ const request = async (url, { method = "GET", body } = {}) => {
   if (!response.ok) {
     const text = await response.text();
     console.error(`${method} ${url} failed`, response.status, text);
-    throw new Error(`Request failed: ${response.status} ${text}`);
+    throw new Error(`${response.status}: ${text}`);
   }
   const text = await response.text();
   if (!text) return null;
-  const data = JSON.parse(text);
-  return data?.data ?? data;
+  try {
+    const data = JSON.parse(text);
+    return data?.data ?? data;
+  } catch {
+    return text; // plain-text response (e.g. a file url)
+  }
 };
 
 const toList = (data) => {
@@ -39,7 +110,7 @@ export const uploadFile = (file, chatId) => {
   return request(`${BASE_URL}/upload`, { method: "POST", body: form });
 };
 
-// POST /api/attachments/upload-multiple  (kept as individual attachments)
+// POST /api/attachments/upload-multiple
 export const uploadMultiple = (files, chatId) => {
   const form = new FormData();
   Array.from(files).forEach((f) => form.append("files", f));
@@ -47,19 +118,31 @@ export const uploadMultiple = (files, chatId) => {
   return request(`${BASE_URL}/upload-multiple`, { method: "POST", body: form });
 };
 
-// POST /api/attachments/projects/upload  (files go into a named Project File folder)
-export const uploadToProject = ({ projectName, files, chatId, projectId, dueDate }) => {
+// POST /api/attachments/projects/upload
+// Many files in ONE request. When projectId is sent, the files should be ADDED
+// to that existing project (new project is created only when projectId is missing).
+// Sends the title under several common names; Spring ignores unknown params.
+export const uploadToProject = ({ projectName, files, chatId, projectId }) => {
   const form = new FormData();
   Array.from(files).forEach((f) => form.append("files", f));
-  if (projectName) form.append("projectName", projectName);
   if (projectId != null) form.append("projectId", projectId);
+  if (projectName) {
+    const title = projectName.trim();
+    form.append("projectTitle", title);
+    form.append("title", title);
+    form.append("projectName", title);
+  }
   if (chatId != null) form.append("chatId", chatId);
-  if (dueDate) form.append("dueDate", dueDate);
   return request(`${BASE_URL}/projects/upload`, { method: "POST", body: form });
 };
 
-// GET /api/attachments/projects  (my Project File folders)
+// GET /api/attachments/projects
 export const getMyProjects = async () => toList(await request(`${BASE_URL}/projects`));
 
-// GET /api/attachments/projects/{projectId}  (one project's files)
+// GET /api/attachments/projects/{projectId}
 export const getProject = (projectId) => request(`${BASE_URL}/projects/${projectId}`);
+
+// DELETE /api/attachments/projects/{projectId}/files/{fileId}
+// ⚠ confirm the exact path in Swagger and change it here if your backend differs
+export const deleteProjectFile = (projectId, fileId) =>
+  request(`${BASE_URL}/projects/${projectId}/files/${fileId}`, { method: "DELETE" });
