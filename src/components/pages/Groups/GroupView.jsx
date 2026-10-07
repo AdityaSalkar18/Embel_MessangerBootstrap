@@ -992,6 +992,1090 @@
 
 // export default GroupView;
 
+// import { useRef, useState, useEffect } from "react";
+// import {
+//   ArrowLeft,
+//   Search as SearchIcon,
+//   MoreVertical,
+//   Paperclip,
+//   Send,
+//   Pin,
+//   FileText,
+//   Image,
+//   FolderOpen,
+//   Link,
+//   Trash2,
+//   Star,
+//   Pencil,
+//   Forward,
+//   Smile,
+//   X,
+//   Info,
+// } from "lucide-react";
+
+// import Search from "./GroupsSearch";
+// import GroupDetails from "./GroupDetails";
+// import { getMyProfile } from "../../../api/usersApi";
+// import * as messagesApi from "../../../api/messagesApi";
+// import * as attachmentsApi from "../../../api/attachmentsApi";
+
+// /* =========================================================
+//  * HELPERS
+//  * ========================================================= */
+
+// const EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+
+// const fmtTime = (value) => {
+//   const date = value ? new Date(value) : new Date();
+//   return isNaN(date) ? "" : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+// };
+
+// // raw timestamp (ms) used for sorting
+// const toTs = (value) => {
+//   const t = value ? new Date(value).getTime() : Date.now();
+//   return isNaN(t) ? 0 : t;
+// };
+
+// const iconBtn = { border: "none", background: "transparent", cursor: "pointer", padding: "4px" };
+
+// const modalInput = {
+//   width: "100%",
+//   padding: "10px",
+//   border: "1px solid #ddd",
+//   borderRadius: "7px",
+//   marginBottom: "10px",
+//   boxSizing: "border-box",
+// };
+
+// const mapReactions = (r) => {
+//   if (Array.isArray(r)) {
+//     const grouped = {};
+//     r.forEach((x) => {
+//       const emoji = typeof x === "string" ? x : x.emoji;
+//       grouped[emoji] = (grouped[emoji] || 0) + (x.count ?? 1);
+//     });
+//     return Object.entries(grouped).map(([emoji, count]) => ({ emoji, count }));
+//   }
+//   if (r && typeof r === "object")
+//     return Object.entries(r).map(([emoji, count]) => ({
+//       emoji,
+//       count: Array.isArray(count) ? count.length : count,
+//     }));
+//   return [];
+// };
+
+// const mapMessage = (m, myId) => {
+//   const rawTime = m.createdAt ?? m.sentAt ?? m.timestamp;
+//   return {
+//     id: m.id ?? m.messageId,
+//     text: m.content ?? m.text ?? "",
+//     sender: String(m.senderId ?? m.sender?.id) === String(myId) ? "me" : "other",
+//     senderName: m.senderName ?? m.sender?.name ?? m.sender?.fullName ?? m.sender?.username ?? "",
+//     ts: toTs(rawTime),
+//     time: fmtTime(rawTime),
+//     pinned: m.pinned ?? m.isPinned ?? false,
+//     starred: m.starred ?? m.isStarred ?? false,
+//     edited: m.edited ?? m.isEdited ?? false,
+//     reactions: mapReactions(m.reactions),
+//   };
+// };
+
+// // oldest first -> newest last (WhatsApp style)
+// const sortAsc = (list) =>
+//   [...list].sort((a, b) => a.ts - b.ts || Number(a.id) - Number(b.id) || 0);
+
+// /* =========================================================
+//  * COMPONENT
+//  * ========================================================= */
+
+// function GroupView({ group, onBack }) {
+//   // Messages API uses the chat id of the group
+//   const chatId = group?.chatId ?? group?.id;
+
+//   const [message, setMessage] = useState("");
+//   const [messages, setMessages] = useState([]);
+//   const [myId, setMyId] = useState(null);
+//   const [sending, setSending] = useState(false);
+//   const [uploading, setUploading] = useState(false);
+
+//   const [showSearch, setShowSearch] = useState(false);
+//   const [showDetails, setShowDetails] = useState(false);
+//   const [showMenu, setShowMenu] = useState(false);
+//   const [hoveredMessageId, setHoveredMessageId] = useState(null);
+//   const [reactionPickerId, setReactionPickerId] = useState(null);
+//   const [editingId, setEditingId] = useState(null);
+
+//   const [panel, setPanel] = useState(null);
+//   const pinnedMessages = messages.filter((m) => m.pinned);
+//   const starredMessages = messages.filter((m) => m.starred);
+
+//   const [forwardMsg, setForwardMsg] = useState(null);
+//   const [forwardTo, setForwardTo] = useState("");
+
+//   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+//   const [showProjectModal, setShowProjectModal] = useState(false);
+//   const [projectName, setProjectName] = useState("");
+//   const [projectDate, setProjectDate] = useState("");
+//   const [projectFile, setProjectFile] = useState(null);
+//   const [existingProjects, setExistingProjects] = useState([]);
+
+//   const [projectFilesData] = useState({
+//     "College ERP": [
+//       { name: "StudentController.java", type: "Java" },
+//       { name: "StudentService.java", type: "Java" },
+//       { name: "Student.jsx", type: "React" },
+//     ],
+//     "Industrial ERP": [
+//       { name: "OrderController.java", type: "Java" },
+//       { name: "InventoryService.java", type: "Java" },
+//       { name: "Dashboard.jsx", type: "React" },
+//     ],
+//     "Gurav Matrimonial": [
+//       { name: "BiodataController.java", type: "Java" },
+//       { name: "BiodataService.java", type: "Java" },
+//       { name: "Biodata.jsx", type: "React" },
+//     ],
+//   });
+
+//   const messagesEndRef = useRef(null);
+//   const fileInputRef = useRef(null);
+//   const imageInputRef = useRef(null);
+
+//   const patchMessage = (id, patch) =>
+//     setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)));
+
+//   /* ---------- MY ID ---------- */
+
+//   useEffect(() => {
+//     getMyProfile()
+//       .then((p) => setMyId(p.id ?? p.userId))
+//       .catch((e) => console.error("Profile error:", e));
+//   }, []);
+
+//   /* ---------- LOAD HISTORY + POLL ---------- */
+
+//   useEffect(() => {
+//     if (chatId == null || myId == null) return;
+//     let cancelled = false;
+
+//     const load = async () => {
+//       try {
+//         const list = await messagesApi.getChatMessages(chatId);
+//         if (!cancelled) setMessages(sortAsc(list.map((m) => mapMessage(m, myId))));
+//       } catch (e) {
+//         console.error("Load messages error:", e);
+//       }
+//     };
+
+//     load();
+//     const timer = setInterval(load, 5000);
+//     return () => {
+//       cancelled = true;
+//       clearInterval(timer);
+//     };
+//   }, [chatId, myId]);
+
+//   /* ---------- SCROLL (only when a message is added, not on every poll) ---------- */
+
+//   const lastId = messages[messages.length - 1]?.id;
+
+//   useEffect(() => {
+//     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+//   }, [lastId, messages.length]);
+
+//   /* ---------- SEND / EDIT ---------- */
+
+//   // persists a message on the server and appends it to the bottom of the list
+//   const sendText = async (text) => {
+//     if (!text.trim()) return false;
+//     try {
+//       const sent = await messagesApi.sendMessage(chatId, text);
+//       setMessages((prev) => sortAsc([...prev, mapMessage(sent, myId)]));
+//       return true;
+//     } catch (e) {
+//       console.error("Send error:", e);
+//       alert("Failed to send message.");
+//       return false;
+//     }
+//   };
+
+//   const sendMessage = async () => {
+//     const text = message.trim();
+//     if (!text) return;
+
+//     if (editingId) {
+//       saveEdit(text);
+//       return;
+//     }
+
+//     setSending(true);
+//     const success = await sendText(text);
+//     if (success) setMessage("");
+//     setSending(false);
+//   };
+
+//   const handleKeyDown = (e) => {
+//     if (e.key === "Enter" && !e.shiftKey) {
+//       e.preventDefault();
+//       if (!sending) sendMessage();
+//     }
+//     if (e.key === "Escape" && editingId) cancelEdit();
+//   };
+
+//   const startEdit = (msg) => {
+//     setEditingId(msg.id);
+//     setMessage(msg.text);
+//   };
+
+//   const cancelEdit = () => {
+//     setEditingId(null);
+//     setMessage("");
+//   };
+
+//   const saveEdit = async (text) => {
+//     const id = editingId;
+//     const original = messages.find((m) => m.id === id);
+//     if (!original || text === original.text) return cancelEdit();
+
+//     try {
+//       await messagesApi.editMessage(id, text);
+//       patchMessage(id, { text, edited: true });
+//     } catch (e) {
+//       console.error("Edit error:", e);
+//       alert("Failed to edit message.");
+//     }
+//     cancelEdit();
+//   };
+
+//   /* ---------- DELETE / PIN / STAR / REACT / FORWARD ---------- */
+
+//   const deleteMessage = async (msg) => {
+//     if (!window.confirm("Delete this message?")) return;
+//     try {
+//       await messagesApi.deleteMessage(msg.id);
+//       setMessages((prev) => prev.filter((m) => m.id !== msg.id));
+//       if (editingId === msg.id) cancelEdit();
+//     } catch (e) {
+//       console.error("Delete error:", e);
+//       alert("Failed to delete message.");
+//     }
+//   };
+
+//   const togglePinMessage = async (msg) => {
+//     try {
+//       await messagesApi.togglePinMessage(msg.id);
+//       patchMessage(msg.id, { pinned: !msg.pinned });
+//     } catch (e) {
+//       console.error("Pin error:", e);
+//     }
+//   };
+
+//   const toggleStarMessage = async (msg) => {
+//     try {
+//       await messagesApi.toggleStarMessage(msg.id);
+//       patchMessage(msg.id, { starred: !msg.starred });
+//     } catch (e) {
+//       console.error("Star error:", e);
+//     }
+//   };
+
+//   const reactToMessage = async (msg, emoji) => {
+//     setReactionPickerId(null);
+//     try {
+//       const updated = await messagesApi.reactToMessage(msg.id, emoji);
+//       if (updated?.reactions) {
+//         patchMessage(msg.id, { reactions: mapReactions(updated.reactions) });
+//       } else {
+//         const found = msg.reactions.find((r) => r.emoji === emoji);
+//         patchMessage(msg.id, {
+//           reactions: found
+//             ? msg.reactions.map((r) => (r.emoji === emoji ? { ...r, count: r.count + 1 } : r))
+//             : [...msg.reactions, { emoji, count: 1 }],
+//         });
+//       }
+//     } catch (e) {
+//       console.error("React error:", e);
+//     }
+//   };
+
+//   const submitForward = async () => {
+//     if (!forwardTo.trim()) {
+//       alert("Please enter the target chat ID.");
+//       return;
+//     }
+//     try {
+//       await messagesApi.forwardMessage(forwardMsg.id, forwardTo.trim());
+//       alert("Message forwarded.");
+//       setForwardMsg(null);
+//       setForwardTo("");
+//     } catch (e) {
+//       console.error("Forward error:", e);
+//       alert("Failed to forward message.");
+//     }
+//   };
+
+//   const openPanel = (type) => {
+//     setShowMenu(false);
+//     setPanel(type);
+//   };
+
+//   /* ---------- ATTACHMENTS (files, images, links, projects) ---------- */
+
+//   // POST /api/attachments/upload, then persist a chat message
+//   const uploadAndSend = async (file, prefix) => {
+//     setUploading(true);
+//     try {
+//       await attachmentsApi.uploadFile(file, chatId);
+//       await sendText(`${prefix} ${file.name}`);
+//     } catch (e) {
+//       console.error("Upload error:", e);
+//       alert("Failed to upload file.");
+//     } finally {
+//       setUploading(false);
+//     }
+//   };
+
+//   const handleFileClick = () => {
+//     setShowAttachmentMenu(false);
+//     fileInputRef.current?.click();
+//   };
+
+//   const handleImageClick = () => {
+//     setShowAttachmentMenu(false);
+//     imageInputRef.current?.click();
+//   };
+
+//   const handleFileChange = (e) => {
+//     const file = e.target.files?.[0];
+//     e.target.value = "";
+//     if (file) uploadAndSend(file, "📎 File attached:");
+//   };
+
+//   const handleImageChange = (e) => {
+//     const file = e.target.files?.[0];
+//     e.target.value = "";
+//     if (file) uploadAndSend(file, "🖼️ Image attached:");
+//   };
+
+//   const handleLink = async () => {
+//     setShowAttachmentMenu(false);
+//     const url = window.prompt("Enter link:");
+//     if (!url) return;
+//     await sendText(`🔗 ${url}`);
+//   };
+
+//   const handleProject = () => {
+//     setShowAttachmentMenu(false);
+//     setProjectName("");
+//     setProjectDate("");
+//     setProjectFile(null);
+//     setShowProjectModal(true);
+
+//     // GET /api/attachments/projects -> suggestions for the name field
+//     attachmentsApi
+//       .getMyProjects()
+//       .then(setExistingProjects)
+//       .catch((e) => console.error("Projects load error:", e));
+//   };
+
+//   const handleProjectSubmit = async () => {
+//     const name = projectName.trim();
+//     if (!name) {
+//       alert("Please enter project name.");
+//       return;
+//     }
+
+//     setUploading(true);
+//     try {
+//       // POST /api/attachments/projects/upload (only when a file was chosen)
+//       if (projectFile) {
+//         await attachmentsApi.uploadToProject({
+//           projectName: name,
+//           files: [projectFile],
+//           chatId,
+//           dueDate: projectDate,
+//         });
+//       }
+
+//       let text = `📁 Project: ${name}`;
+//       if (projectDate) text += `\n📅 Date: ${projectDate}`;
+//       if (projectFile) text += `\n📎 File: ${projectFile.name}`;
+//       const ok = await sendText(text);
+
+//       if (ok) {
+//         setShowProjectModal(false);
+//         setProjectName("");
+//         setProjectDate("");
+//         setProjectFile(null);
+//       }
+//     } catch (e) {
+//       console.error("Project error:", e);
+//       alert("Failed to add project.");
+//     } finally {
+//       setUploading(false);
+//     }
+//   };
+
+//   /* ---------- RENDER HELPERS ---------- */
+
+//   const renderMessageText = (text) => {
+//     if (!text) return null;
+//     return text.split(/(https?:\/\/[^\s]+)/g).map((part, index) =>
+//       /^https?:\/\//.test(part) ? (
+//         <a
+//           key={index}
+//           href={part}
+//           target="_blank"
+//           rel="noopener noreferrer"
+//           style={{ color: "#F4712B", textDecoration: "underline", wordBreak: "break-all" }}
+//         >
+//           {part}
+//         </a>
+//       ) : (
+//         <span key={index}>{part}</span>
+//       )
+//     );
+//   };
+
+//   const getInitial = () => group?.name?.charAt(0)?.toUpperCase() || "G";
+//   const memberCount = group?.memberCount || null;
+
+//   /* ---------- FULL SCREEN PAGES ---------- */
+
+//   if (showDetails) {
+//     return (
+//       <GroupDetails
+//         group={group}
+//         onClose={() => setShowDetails(false)}
+//         onLeave={() => {
+//           setShowDetails(false);
+//           onBack && onBack();
+//         }}
+//       />
+//     );
+//   }
+
+//   if (showSearch) {
+//     return <Search group={group} onClose={() => setShowSearch(false)} projectFilesData={projectFilesData} />;
+//   }
+
+//   const panelList = panel === "starred" ? starredMessages : pinnedMessages;
+
+//   /* ---------- RENDER ---------- */
+
+//   return (
+//     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "#fff", position: "relative" }}>
+//       {/* ================= HEADER ================= */}
+//       <div
+//         style={{
+//           height: "65px",
+//           minHeight: "65px",
+//           display: "flex",
+//           alignItems: "center",
+//           padding: "0 18px",
+//           borderBottom: "1px solid #e5e7eb",
+//           background: "#fff",
+//         }}
+//       >
+//         <button
+//           onClick={onBack}
+//           style={{ border: "none", background: "transparent", cursor: "pointer", marginRight: "12px", display: "flex", alignItems: "center", justifyContent: "center" }}
+//         >
+//           <ArrowLeft size={21} color="#333" />
+//         </button>
+
+//         <div
+//           onClick={() => setShowDetails(true)}
+//           style={{
+//             width: "40px",
+//             height: "40px",
+//             borderRadius: "50%",
+//             background: group?.color || "#F4712B",
+//             color: "#fff",
+//             display: "flex",
+//             alignItems: "center",
+//             justifyContent: "center",
+//             fontWeight: "600",
+//             marginRight: "10px",
+//             cursor: "pointer",
+//           }}
+//         >
+//           {getInitial()}
+//         </div>
+
+//         <div onClick={() => setShowDetails(true)} style={{ flex: 1, minWidth: 0, cursor: "pointer" }}>
+//           <div style={{ fontSize: "15px", fontWeight: "600", color: "#222", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+//             {group?.name || "Group"}
+//           </div>
+//           <div style={{ fontSize: "12px", color: sending || uploading ? "#F4712B" : "#888" }}>
+//             {uploading ? "Uploading..." : sending ? "sending..." : memberCount ? `${memberCount} members` : "Group"}
+//           </div>
+//         </div>
+
+//         <button onClick={() => setShowSearch(true)} style={{ border: "none", background: "transparent", cursor: "pointer", padding: "8px" }} title="Search">
+//           <SearchIcon size={20} color="#555" />
+//         </button>
+
+//         <div style={{ position: "relative" }}>
+//           <button onClick={() => setShowMenu((p) => !p)} style={{ border: "none", background: "transparent", cursor: "pointer", padding: "8px" }} title="More">
+//             <MoreVertical size={20} color="#555" />
+//           </button>
+
+//           {showMenu && (
+//             <div
+//               style={{
+//                 position: "absolute",
+//                 right: 0,
+//                 top: "40px",
+//                 background: "#fff",
+//                 border: "1px solid #e5e7eb",
+//                 borderRadius: "8px",
+//                 boxShadow: "0 4px 14px rgba(0,0,0,0.12)",
+//                 zIndex: 50,
+//                 minWidth: "170px",
+//                 overflow: "hidden",
+//               }}
+//             >
+//               {[
+//                 { key: "info", label: "Group info", icon: <Info size={15} color="#555" /> },
+//                 { key: "starred", label: "Starred messages", icon: <Star size={15} color="#555" /> },
+//                 { key: "pinned", label: "Pinned messages", icon: <Pin size={15} color="#555" /> },
+//               ].map((item) => (
+//                 <button
+//                   key={item.key}
+//                   onClick={() => {
+//                     if (item.key === "info") {
+//                       setShowMenu(false);
+//                       setShowDetails(true);
+//                     } else {
+//                       openPanel(item.key);
+//                     }
+//                   }}
+//                   style={{
+//                     display: "flex",
+//                     alignItems: "center",
+//                     gap: "8px",
+//                     width: "100%",
+//                     padding: "10px 14px",
+//                     border: "none",
+//                     background: "#fff",
+//                     cursor: "pointer",
+//                     fontSize: "13px",
+//                     textAlign: "left",
+//                   }}
+//                 >
+//                   {item.icon}
+//                   {item.label}
+//                 </button>
+//               ))}
+//             </div>
+//           )}
+//         </div>
+//       </div>
+
+//       {/* ================= PINNED BANNER ================= */}
+//       {pinnedMessages.length > 0 && (
+//         <div
+//           onClick={() => openPanel("pinned")}
+//           style={{
+//             display: "flex",
+//             alignItems: "center",
+//             gap: "8px",
+//             padding: "8px 18px",
+//             background: "#FFF6EE",
+//             borderBottom: "1px solid #f3d9c3",
+//             cursor: "pointer",
+//             fontSize: "13px",
+//             color: "#444",
+//           }}
+//         >
+//           <Pin size={14} color="#F4712B" />
+//           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+//             {pinnedMessages[pinnedMessages.length - 1].text}
+//           </span>
+//           <span style={{ color: "#888", fontSize: "11px" }}>{pinnedMessages.length} pinned</span>
+//         </div>
+//       )}
+
+//       {/* ================= MESSAGES ================= */}
+//       <div style={{ flex: 1, overflowY: "auto", padding: "20px", background: "#fafafa" }}>
+//         {!messages.length && (
+//           <div style={{ textAlign: "center", color: "#888", fontSize: "13px" }}>No messages yet. Say hi 👋</div>
+//         )}
+
+//         {messages.map((msg) => {
+//           const isMine = msg.sender === "me";
+
+//           return (
+//             <div
+//               key={msg.id}
+//               style={{
+//                 display: "flex",
+//                 justifyContent: isMine ? "flex-end" : "flex-start",
+//                 marginBottom: msg.reactions?.length ? "20px" : "12px",
+//               }}
+//               onMouseEnter={() => setHoveredMessageId(msg.id)}
+//               onMouseLeave={() => {
+//                 setHoveredMessageId(null);
+//                 setReactionPickerId(null);
+//               }}
+//             >
+//               <div style={{ position: "relative", maxWidth: "70%" }}>
+//                 {/* Bubble */}
+//                 <div
+//                   style={{
+//                     background: isMine ? "#F4712B" : "#FBE4D0",
+//                     color: isMine ? "#fff" : "#222",
+//                     padding: "10px 13px",
+//                     borderRadius: isMine ? "14px 14px 3px 14px" : "14px 14px 14px 3px",
+//                     whiteSpace: "pre-wrap",
+//                     wordBreak: "break-word",
+//                     fontSize: "14px",
+//                     outline: editingId === msg.id ? "2px solid #333" : "none",
+//                   }}
+//                 >
+//                   {!isMine && msg.senderName && (
+//                     <div style={{ fontSize: "11px", fontWeight: 600, color: "#F4712B", marginBottom: "2px" }}>
+//                       {msg.senderName}
+//                     </div>
+//                   )}
+
+//                   {renderMessageText(msg.text)}
+
+//                   <div
+//                     style={{
+//                       display: "flex",
+//                       justifyContent: "flex-end",
+//                       alignItems: "center",
+//                       gap: "5px",
+//                       marginTop: "4px",
+//                       fontSize: "10px",
+//                       opacity: 0.8,
+//                     }}
+//                   >
+//                     {msg.pinned && <Pin size={10} />}
+//                     {msg.starred && <Star size={10} fill="currentColor" />}
+//                     {msg.edited && <span>edited</span>}
+//                     <span>{msg.time}</span>
+//                   </div>
+//                 </div>
+
+//                 {/* Reactions */}
+//                 {msg.reactions?.length > 0 && (
+//                   <div
+//                     style={{
+//                       position: "absolute",
+//                       bottom: "-14px",
+//                       [isMine ? "right" : "left"]: "8px",
+//                       display: "flex",
+//                       gap: "3px",
+//                       background: "#fff",
+//                       border: "1px solid #eee",
+//                       borderRadius: "10px",
+//                       padding: "1px 6px",
+//                       fontSize: "12px",
+//                       boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+//                     }}
+//                   >
+//                     {msg.reactions.map((r) => (
+//                       <span key={r.emoji}>
+//                         {r.emoji}
+//                         {r.count > 1 ? ` ${r.count}` : ""}
+//                       </span>
+//                     ))}
+//                   </div>
+//                 )}
+
+//                 {/* Hover Actions */}
+//                 {hoveredMessageId === msg.id && (
+//                   <div
+//                     style={{
+//                       position: "absolute",
+//                       top: "-32px",
+//                       right: isMine ? "0" : "auto",
+//                       left: isMine ? "auto" : "0",
+//                       display: "flex",
+//                       gap: "2px",
+//                       background: "#fff",
+//                       border: "1px solid #ddd",
+//                       borderRadius: "7px",
+//                       padding: "3px",
+//                       boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+//                       zIndex: 5,
+//                     }}
+//                   >
+//                     <button onClick={() => setReactionPickerId((p) => (p === msg.id ? null : msg.id))} style={iconBtn} title="React">
+//                       <Smile size={14} color="#555" />
+//                     </button>
+
+//                     <button onClick={() => toggleStarMessage(msg)} style={iconBtn} title={msg.starred ? "Unstar" : "Star"}>
+//                       <Star size={14} color={msg.starred ? "#F4712B" : "#555"} fill={msg.starred ? "#F4712B" : "none"} />
+//                     </button>
+
+//                     <button onClick={() => togglePinMessage(msg)} style={iconBtn} title={msg.pinned ? "Unpin" : "Pin"}>
+//                       <Pin size={14} color={msg.pinned ? "#F4712B" : "#555"} />
+//                     </button>
+
+//                     <button
+//                       onClick={() => {
+//                         setForwardMsg(msg);
+//                         setForwardTo("");
+//                       }}
+//                       style={iconBtn}
+//                       title="Forward"
+//                     >
+//                       <Forward size={14} color="#555" />
+//                     </button>
+
+//                     {isMine && (
+//                       <button onClick={() => startEdit(msg)} style={iconBtn} title="Edit">
+//                         <Pencil size={14} color="#555" />
+//                       </button>
+//                     )}
+
+//                     <button onClick={() => deleteMessage(msg)} style={iconBtn} title="Delete">
+//                       <Trash2 size={14} color="#555" />
+//                     </button>
+//                   </div>
+//                 )}
+
+//                 {/* Reaction Picker */}
+//                 {reactionPickerId === msg.id && (
+//                   <div
+//                     style={{
+//                       position: "absolute",
+//                       top: "-68px",
+//                       right: isMine ? "0" : "auto",
+//                       left: isMine ? "auto" : "0",
+//                       display: "flex",
+//                       gap: "4px",
+//                       background: "#fff",
+//                       border: "1px solid #ddd",
+//                       borderRadius: "20px",
+//                       padding: "4px 8px",
+//                       boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
+//                       zIndex: 6,
+//                     }}
+//                   >
+//                     {EMOJIS.map((emoji) => (
+//                       <button
+//                         key={emoji}
+//                         onClick={() => reactToMessage(msg, emoji)}
+//                         style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: "18px" }}
+//                       >
+//                         {emoji}
+//                       </button>
+//                     ))}
+//                   </div>
+//                 )}
+//               </div>
+//             </div>
+//           );
+//         })}
+
+//         <div ref={messagesEndRef} />
+//       </div>
+
+//       {/* ================= INPUT ================= */}
+//       <div style={{ borderTop: "1px solid #e5e7eb", background: "#fff", padding: "10px 14px" }}>
+//         <input ref={fileInputRef} type="file" style={{ display: "none" }} onChange={handleFileChange} />
+//         <input ref={imageInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleImageChange} />
+
+//         {editingId && (
+//           <div
+//             style={{
+//               display: "flex",
+//               alignItems: "center",
+//               justifyContent: "space-between",
+//               padding: "6px 10px",
+//               marginBottom: "8px",
+//               background: "#FFF6EE",
+//               borderLeft: "3px solid #F4712B",
+//               borderRadius: "4px",
+//               fontSize: "12px",
+//               color: "#555",
+//             }}
+//           >
+//             <span>Editing message</span>
+//             <button onClick={cancelEdit} style={iconBtn} title="Cancel edit">
+//               <X size={14} color="#555" />
+//             </button>
+//           </div>
+//         )}
+
+//         {showAttachmentMenu && (
+//           <div
+//             style={{
+//               display: "flex",
+//               gap: "8px",
+//               padding: "8px",
+//               marginBottom: "8px",
+//               background: "#fff",
+//               border: "1px solid #e5e7eb",
+//               borderRadius: "8px",
+//               width: "fit-content",
+//               boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+//             }}
+//           >
+//             {[
+//               { onClick: handleFileClick, title: "File", icon: FileText },
+//               { onClick: handleImageClick, title: "Image", icon: Image },
+//               { onClick: handleProject, title: "Project", icon: FolderOpen },
+//               { onClick: handleLink, title: "Link", icon: Link },
+//             ].map(({ onClick, title, icon: Icon }) => (
+//               <button
+//                 key={title}
+//                 onClick={onClick}
+//                 disabled={uploading}
+//                 style={{
+//                   border: "none",
+//                   background: "#FBE4D0",
+//                   borderRadius: "7px",
+//                   padding: "8px",
+//                   cursor: uploading ? "not-allowed" : "pointer",
+//                   opacity: uploading ? 0.6 : 1,
+//                 }}
+//                 title={title}
+//               >
+//                 <Icon size={18} color="#F4712B" />
+//               </button>
+//             ))}
+//           </div>
+//         )}
+
+//         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+//           <button
+//             onClick={() => setShowAttachmentMenu((prev) => !prev)}
+//             style={{ border: "none", background: "transparent", cursor: "pointer", padding: "8px" }}
+//             title="Attach"
+//           >
+//             <Paperclip size={20} color="#555" />
+//           </button>
+
+//           <input
+//             type="text"
+//             value={message}
+//             onChange={(e) => setMessage(e.target.value)}
+//             onKeyDown={handleKeyDown}
+//             placeholder={editingId ? "Edit your message..." : "Type a message..."}
+//             style={{
+//               flex: 1,
+//               border: "1px solid #ddd",
+//               outline: "none",
+//               borderRadius: "20px",
+//               padding: "10px 15px",
+//               fontSize: "14px",
+//             }}
+//           />
+
+//           <button
+//             onClick={sendMessage}
+//             disabled={!message.trim() || sending}
+//             style={{
+//               width: "42px",
+//               height: "42px",
+//               border: "none",
+//               borderRadius: "50%",
+//               background: message.trim() && !sending ? "#F4712B" : "#ddd",
+//               cursor: message.trim() && !sending ? "pointer" : "not-allowed",
+//               display: "flex",
+//               alignItems: "center",
+//               justifyContent: "center",
+//             }}
+//             title={editingId ? "Save" : "Send"}
+//           >
+//             <Send size={18} color="#fff" />
+//           </button>
+//         </div>
+//       </div>
+
+//       {/* ================= STARRED / PINNED PANEL ================= */}
+//       {panel && (
+//         <div
+//           style={{
+//             position: "absolute",
+//             top: 0,
+//             right: 0,
+//             bottom: 0,
+//             width: "min(340px, 100%)",
+//             background: "#fff",
+//             borderLeft: "1px solid #e5e7eb",
+//             boxShadow: "-4px 0 14px rgba(0,0,0,0.08)",
+//             display: "flex",
+//             flexDirection: "column",
+//             zIndex: 60,
+//           }}
+//         >
+//           <div
+//             style={{
+//               height: "65px",
+//               minHeight: "65px",
+//               display: "flex",
+//               alignItems: "center",
+//               justifyContent: "space-between",
+//               padding: "0 16px",
+//               borderBottom: "1px solid #e5e7eb",
+//               fontWeight: 600,
+//             }}
+//           >
+//             {panel === "starred" ? "Starred messages" : "Pinned messages"}
+//             <button onClick={() => setPanel(null)} style={iconBtn}>
+//               <X size={18} color="#555" />
+//             </button>
+//           </div>
+
+//           <div style={{ flex: 1, overflowY: "auto", padding: "12px" }}>
+//             {panelList.length === 0 && <div style={{ color: "#888", fontSize: "13px" }}>Nothing here yet.</div>}
+
+//             {panelList.map((m) => (
+//               <div
+//                 key={m.id}
+//                 style={{
+//                   background: "#FBE4D0",
+//                   borderRadius: "10px",
+//                   padding: "10px 12px",
+//                   marginBottom: "8px",
+//                   fontSize: "13px",
+//                   wordBreak: "break-word",
+//                   whiteSpace: "pre-wrap",
+//                 }}
+//               >
+//                 {m.senderName && (
+//                   <div style={{ fontSize: "11px", fontWeight: 600, color: "#F4712B", marginBottom: "2px" }}>
+//                     {m.senderName}
+//                   </div>
+//                 )}
+//                 {renderMessageText(m.text)}
+//                 <div style={{ fontSize: "10px", color: "#777", marginTop: "4px", textAlign: "right" }}>{m.time}</div>
+//               </div>
+//             ))}
+//           </div>
+//         </div>
+//       )}
+
+//       {/* ================= FORWARD MODAL ================= */}
+//       {forwardMsg && (
+//         <div
+//           style={{
+//             position: "fixed",
+//             inset: 0,
+//             background: "rgba(0,0,0,0.4)",
+//             display: "flex",
+//             alignItems: "center",
+//             justifyContent: "center",
+//             zIndex: 1000,
+//           }}
+//         >
+//           <div style={{ width: "380px", maxWidth: "90%", background: "#fff", borderRadius: "12px", padding: "22px", boxShadow: "0 10px 30px rgba(0,0,0,0.2)" }}>
+//             <h3 style={{ marginTop: 0, marginBottom: "12px" }}>Forward message</h3>
+
+//             <div style={{ background: "#FBE4D0", borderRadius: "8px", padding: "8px 10px", fontSize: "13px", marginBottom: "12px", maxHeight: "80px", overflow: "hidden" }}>
+//               {forwardMsg.text}
+//             </div>
+
+//             <input
+//               type="text"
+//               placeholder="Target chat ID"
+//               value={forwardTo}
+//               onChange={(e) => setForwardTo(e.target.value)}
+//               style={{ ...modalInput, marginBottom: "16px" }}
+//             />
+
+//             <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
+//               <button
+//                 onClick={() => setForwardMsg(null)}
+//                 style={{ border: "1px solid #ddd", background: "#fff", padding: "9px 16px", borderRadius: "7px", cursor: "pointer" }}
+//               >
+//                 Cancel
+//               </button>
+//               <button
+//                 onClick={submitForward}
+//                 style={{ border: "none", background: "#F4712B", color: "#fff", padding: "9px 16px", borderRadius: "7px", cursor: "pointer" }}
+//               >
+//                 Forward
+//               </button>
+//             </div>
+//           </div>
+//         </div>
+//       )}
+
+//       {/* ================= PROJECT MODAL ================= */}
+//       {showProjectModal && (
+//         <div
+//           style={{
+//             position: "fixed",
+//             inset: 0,
+//             background: "rgba(0,0,0,0.4)",
+//             display: "flex",
+//             alignItems: "center",
+//             justifyContent: "center",
+//             zIndex: 1000,
+//           }}
+//         >
+//           <div style={{ width: "420px", maxWidth: "90%", background: "#fff", borderRadius: "12px", padding: "22px", boxShadow: "0 10px 30px rgba(0,0,0,0.2)" }}>
+//             <h3 style={{ marginTop: 0, marginBottom: "18px" }}>Add Project</h3>
+
+//             <input
+//               type="text"
+//               list="group-project-names"
+//               placeholder="Project name"
+//               value={projectName}
+//               onChange={(e) => setProjectName(e.target.value)}
+//               style={modalInput}
+//             />
+//             <datalist id="group-project-names">
+//               {existingProjects.map((p) => {
+//                 const n = p.name ?? p.projectName;
+//                 return n ? <option key={p.id ?? n} value={n} /> : null;
+//               })}
+//             </datalist>
+
+//             <input
+//               type="date"
+//               value={projectDate}
+//               onChange={(e) => setProjectDate(e.target.value)}
+//               style={modalInput}
+//             />
+
+//             <input
+//               type="file"
+//               onChange={(e) => setProjectFile(e.target.files?.[0] || null)}
+//               style={{ width: "100%", marginBottom: "18px" }}
+//             />
+
+//             <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
+//               <button
+//                 onClick={() => setShowProjectModal(false)}
+//                 disabled={uploading}
+//                 style={{ border: "1px solid #ddd", background: "#fff", padding: "9px 16px", borderRadius: "7px", cursor: "pointer" }}
+//               >
+//                 Cancel
+//               </button>
+//               <button
+//                 onClick={handleProjectSubmit}
+//                 disabled={uploading}
+//                 style={{
+//                   border: "none",
+//                   background: "#F4712B",
+//                   color: "#fff",
+//                   padding: "9px 16px",
+//                   borderRadius: "7px",
+//                   cursor: uploading ? "not-allowed" : "pointer",
+//                   opacity: uploading ? 0.7 : 1,
+//                 }}
+//               >
+//                 {uploading ? "Uploading..." : "Add Project"}
+//               </button>
+//             </div>
+//           </div>
+//         </div>
+//       )}
+//     </div>
+//   );
+// }
+
+// export default GroupView;
+
 import { useRef, useState, useEffect } from "react";
 import {
   ArrowLeft,
@@ -1001,9 +2085,9 @@ import {
   Send,
   Pin,
   FileText,
-  Image,
+  Image as ImageIcon,
   FolderOpen,
-  Link,
+  Download,
   Trash2,
   Star,
   Pencil,
@@ -1025,6 +2109,24 @@ import * as attachmentsApi from "../../../api/attachmentsApi";
 
 const EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
+const ATTACH_RE = /^\[\[(img|file):(.*?)\|(.*?)\]\]$/;
+const API_BASE = "http://localhost:8081"; // your backend
+const toUrl = (u) =>
+  /^https?:\/\//.test(u) ? u : `${API_BASE}${u.startsWith("/") ? "" : "/"}${u}`;
+
+// short text for banner / previews
+const previewText = (text) => {
+  const a = (text || "").match(ATTACH_RE);
+  if (a) return `${a[1] === "img" ? "🖼️" : "📎"} ${a[3]}`;
+  if ((text || "").startsWith("📁 Project:")) return text.split("\n")[0];
+  return text;
+};
+
+const fileExt = (name = "") =>
+  name.includes(".") ? name.split(".").pop().toUpperCase() : "FILE";
+const baseName = (u = "") => decodeURIComponent(u.split("?")[0].split("/").pop() || "");
+const isCard = (t = "") => ATTACH_RE.test(t) || t.startsWith("📁 Project:");
+
 const fmtTime = (value) => {
   const date = value ? new Date(value) : new Date();
   return isNaN(date) ? "" : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -1038,6 +2140,16 @@ const toTs = (value) => {
 
 const iconBtn = { border: "none", background: "transparent", cursor: "pointer", padding: "4px" };
 
+const cardBox = {
+  width: 250,
+  maxWidth: "100%",
+  background: "#fff",
+  border: "1px solid #e5e7eb",
+  borderRadius: 12,
+  overflow: "hidden",
+  color: "#222",
+};
+
 const modalInput = {
   width: "100%",
   padding: "10px",
@@ -1045,6 +2157,18 @@ const modalInput = {
   borderRadius: "7px",
   marginBottom: "10px",
   boxSizing: "border-box",
+};
+
+// "Aditya created this group and added Vishal" type messages
+const isSystemMsg = (m) => {
+  const type = String(m.type ?? m.messageType ?? "").toUpperCase();
+  const name = m.senderName ?? m.sender?.name ?? m.sender?.fullName ?? m.sender?.username ?? "";
+  return (
+    type === "SYSTEM" ||
+    m.system === true ||
+    m.isSystem === true ||
+    String(name).trim().toLowerCase() === "system"
+  );
 };
 
 const mapReactions = (r) => {
@@ -1071,6 +2195,7 @@ const mapMessage = (m, myId) => {
     text: m.content ?? m.text ?? "",
     sender: String(m.senderId ?? m.sender?.id) === String(myId) ? "me" : "other",
     senderName: m.senderName ?? m.sender?.name ?? m.sender?.fullName ?? m.sender?.username ?? "",
+    system: isSystemMsg(m),
     ts: toTs(rawTime),
     time: fmtTime(rawTime),
     pinned: m.pinned ?? m.isPinned ?? false,
@@ -1319,14 +2444,18 @@ function GroupView({ group, onBack }) {
     setPanel(type);
   };
 
-  /* ---------- ATTACHMENTS (files, images, links, projects) ---------- */
+  /* ---------- ATTACHMENTS (files, images, projects) ---------- */
 
-  // POST /api/attachments/upload, then persist a chat message
-  const uploadAndSend = async (file, prefix) => {
+  // POST /api/attachments/upload, then persist a chat message with the file url
+  const uploadAndSend = async (file, kind) => {
     setUploading(true);
     try {
-      await attachmentsApi.uploadFile(file, chatId);
-      await sendText(`${prefix} ${file.name}`);
+      const res = await attachmentsApi.uploadFile(file, chatId);
+      console.log("upload response:", res); // check the url key
+      const url =
+        res?.url ?? res?.fileUrl ?? res?.filePath ?? res?.path ??
+        (typeof res === "string" ? res : "");
+      await sendText(`[[${kind}:${url}|${file.name}]]`);
     } catch (e) {
       console.error("Upload error:", e);
       alert("Failed to upload file.");
@@ -1348,20 +2477,13 @@ function GroupView({ group, onBack }) {
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
     e.target.value = "";
-    if (file) uploadAndSend(file, "📎 File attached:");
+    if (file) uploadAndSend(file, "file");
   };
 
   const handleImageChange = (e) => {
     const file = e.target.files?.[0];
     e.target.value = "";
-    if (file) uploadAndSend(file, "🖼️ Image attached:");
-  };
-
-  const handleLink = async () => {
-    setShowAttachmentMenu(false);
-    const url = window.prompt("Enter link:");
-    if (!url) return;
-    await sendText(`🔗 ${url}`);
+    if (file) uploadAndSend(file, "img");
   };
 
   const handleProject = () => {
@@ -1420,6 +2542,122 @@ function GroupView({ group, onBack }) {
 
   const renderMessageText = (text) => {
     if (!text) return null;
+
+    // image / file attachment
+    const a = text.match(ATTACH_RE);
+    if (a) {
+      const [, kind, url, name] = a;
+      const href = toUrl(url);
+
+      if (kind === "img") {
+        return (
+          <div style={{ ...cardBox, padding: 8 }}>
+            <a href={href} target="_blank" rel="noopener noreferrer">
+              <img
+                src={href}
+                alt={name}
+                style={{ display: "block", width: "100%", maxHeight: 180, objectFit: "cover", borderRadius: 8 }}
+              />
+            </a>
+            <div style={{ padding: "8px 4px 2px", fontSize: 12, fontWeight: 600, wordBreak: "break-word" }}>
+              {name}
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div style={cardBox}>
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "10px 12px",
+              textDecoration: "none",
+              color: "#222",
+              borderBottom: "1px solid #eee",
+            }}
+          >
+            <div
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 10,
+                background: "#FFF1E6",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <FileText size={20} color="#F4712B" />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {baseName(url) || name}
+              </div>
+              <div style={{ fontSize: 10, color: "#8a8a8a", marginTop: 2, letterSpacing: 0.3 }}>
+                {fileExt(name)} · CLICK TO OPEN
+              </div>
+            </div>
+            <Download size={18} color="#777" style={{ flexShrink: 0 }} />
+          </a>
+          <div style={{ padding: "8px 12px 10px", fontSize: 12, fontWeight: 400, wordBreak: "break-all" }}>
+            {name}
+          </div>
+        </div>
+      );
+    }
+
+    // project card
+    if (text.startsWith("📁 Project:")) {
+      const lines = text.split("\n");
+      const pName = lines[0].replace("📁 Project:", "").trim();
+      const date = lines.find((l) => l.startsWith("📅"))?.replace("📅 Date:", "").trim();
+      const file = lines.find((l) => l.startsWith("📎"))?.replace("📎 File:", "").trim();
+      return (
+        <div style={{ ...cardBox, padding: 8 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: 8,
+              borderBottom: file ? "1px solid #eee" : "none",
+            }}
+          >
+            <div
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 10,
+                background: "#E6F6EF",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <FolderOpen size={20} color="#2F9E75" />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {pName}
+              </div>
+              <div style={{ fontSize: 10, color: "#888", marginTop: 2 }}>
+                PROJECT{date ? ` · ${date}` : ""}
+              </div>
+            </div>
+          </div>
+          {file && <div style={{ padding: "8px 8px 2px", fontSize: 12, wordBreak: "break-all" }}>{file}</div>}
+        </div>
+      );
+    }
+
     return text.split(/(https?:\/\/[^\s]+)/g).map((part, index) =>
       /^https?:\/\//.test(part) ? (
         <a
@@ -1591,7 +2829,7 @@ function GroupView({ group, onBack }) {
         >
           <Pin size={14} color="#F4712B" />
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
-            {pinnedMessages[pinnedMessages.length - 1].text}
+            {previewText(pinnedMessages[pinnedMessages.length - 1].text)}
           </span>
           <span style={{ color: "#888", fontSize: "11px" }}>{pinnedMessages.length} pinned</span>
         </div>
@@ -1604,7 +2842,34 @@ function GroupView({ group, onBack }) {
         )}
 
         {messages.map((msg) => {
+          // WhatsApp-style system message (centered pill)
+          if (msg.system) {
+            return (
+              <div
+                key={msg.id}
+                style={{ display: "flex", justifyContent: "center", margin: "12px 0" }}
+              >
+                <div
+                  style={{
+                    background: "#EEF0F2",
+                    color: "#667781",
+                    fontSize: "12px",
+                    padding: "5px 12px",
+                    borderRadius: "8px",
+                    maxWidth: "80%",
+                    textAlign: "center",
+                    wordBreak: "break-word",
+                    boxShadow: "0 1px 1px rgba(0,0,0,0.06)",
+                  }}
+                >
+                  {msg.text}
+                </div>
+              </div>
+            );
+          }
+
           const isMine = msg.sender === "me";
+          const card = isCard(msg.text);
 
           return (
             <div
@@ -1624,9 +2889,10 @@ function GroupView({ group, onBack }) {
                 {/* Bubble */}
                 <div
                   style={{
-                    background: isMine ? "#F4712B" : "#FBE4D0",
-                    color: isMine ? "#fff" : "#222",
-                    padding: "10px 13px",
+                    background: card ? "transparent" : isMine ? "#F4712B" : "#FBE4D0",
+                    color: card ? "#222" : isMine ? "#fff" : "#222",
+                    border: "none",
+                    padding: card ? 0 : "10px 13px",
                     borderRadius: isMine ? "14px 14px 3px 14px" : "14px 14px 14px 3px",
                     whiteSpace: "pre-wrap",
                     wordBreak: "break-word",
@@ -1635,7 +2901,7 @@ function GroupView({ group, onBack }) {
                   }}
                 >
                   {!isMine && msg.senderName && (
-                    <div style={{ fontSize: "11px", fontWeight: 600, color: "#F4712B", marginBottom: "2px" }}>
+                    <div style={{ fontSize: "11px", fontWeight: 600, color: "#F4712B", marginBottom: "2px", padding: card ? "0 4px" : 0 }}>
                       {msg.senderName}
                     </div>
                   )}
@@ -1651,6 +2917,8 @@ function GroupView({ group, onBack }) {
                       marginTop: "4px",
                       fontSize: "10px",
                       opacity: 0.8,
+                      color: card ? "#888" : "inherit",
+                      padding: card ? "0 4px" : 0,
                     }}
                   >
                     {msg.pinned && <Pin size={10} />}
@@ -1777,8 +3045,14 @@ function GroupView({ group, onBack }) {
       </div>
 
       {/* ================= INPUT ================= */}
-      <div style={{ borderTop: "1px solid #e5e7eb", background: "#fff", padding: "10px 14px" }}>
-        <input ref={fileInputRef} type="file" style={{ display: "none" }} onChange={handleFileChange} />
+      <div style={{ position: "relative", borderTop: "1px solid #e5e7eb", background: "#fff", padding: "10px 14px" }}>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf,.doc,.docx,.txt,.xls,.xlsx,.ppt,.pptx,.zip,.java,.js,.jsx,.ts,.py,.json,.sql,.xml"
+          style={{ display: "none" }}
+          onChange={handleFileChange}
+        />
         <input ref={imageInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleImageChange} />
 
         {editingId && (
@@ -1806,38 +3080,45 @@ function GroupView({ group, onBack }) {
         {showAttachmentMenu && (
           <div
             style={{
-              display: "flex",
-              gap: "8px",
-              padding: "8px",
-              marginBottom: "8px",
+              position: "absolute",
+              bottom: "100%",
+              left: 14,
+              marginBottom: 6,
               background: "#fff",
               border: "1px solid #e5e7eb",
-              borderRadius: "8px",
-              width: "fit-content",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+              borderRadius: 12,
+              boxShadow: "0 4px 14px rgba(0,0,0,0.12)",
+              padding: 6,
+              minWidth: 200,
+              zIndex: 20,
             }}
           >
             {[
-              { onClick: handleFileClick, title: "File", icon: FileText },
-              { onClick: handleImageClick, title: "Image", icon: Image },
-              { onClick: handleProject, title: "Project", icon: FolderOpen },
-              { onClick: handleLink, title: "Link", icon: Link },
-            ].map(({ onClick, title, icon: Icon }) => (
+              { onClick: handleFileClick, label: "Document / Code", icon: FileText, color: "#E8590C" },
+              { onClick: handleImageClick, label: "Image", icon: ImageIcon, color: "#3B5BDB" },
+              { onClick: handleProject, label: "Project File", icon: FolderOpen, color: "#2F9E75" },
+            ].map(({ onClick, label, icon: Icon, color }) => (
               <button
-                key={title}
+                key={label}
                 onClick={onClick}
                 disabled={uploading}
                 style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  width: "100%",
+                  padding: "11px 12px",
                   border: "none",
-                  background: "#FBE4D0",
-                  borderRadius: "7px",
-                  padding: "8px",
+                  background: "transparent",
+                  borderRadius: 8,
                   cursor: uploading ? "not-allowed" : "pointer",
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: "#222",
                   opacity: uploading ? 0.6 : 1,
                 }}
-                title={title}
               >
-                <Icon size={18} color="#F4712B" />
+                <Icon size={20} color={color} /> {label}
               </button>
             ))}
           </div>
@@ -1970,7 +3251,7 @@ function GroupView({ group, onBack }) {
             <h3 style={{ marginTop: 0, marginBottom: "12px" }}>Forward message</h3>
 
             <div style={{ background: "#FBE4D0", borderRadius: "8px", padding: "8px 10px", fontSize: "13px", marginBottom: "12px", maxHeight: "80px", overflow: "hidden" }}>
-              {forwardMsg.text}
+              {previewText(forwardMsg.text)}
             </div>
 
             <input
